@@ -29,11 +29,11 @@ def test_too_small_timestamp():
     value = timeMap.get('k1', time_stamp)
     assert value == ''
 
-def test_large_key():
+def test_large_timestamp():
     timeMap = TimeMap()
     timeMap.set('k1', 'v1')
     timeMap.set('k2', 'v2')
-    time_stamp = int(datetime.now(timezone.utc).timestamp()*1000000)
+    time_stamp = int(datetime.now(timezone.utc).timestamp()*1000000+1000000000000)
     value = timeMap.get('k1', time_stamp)
     assert value == 'v1'
 
