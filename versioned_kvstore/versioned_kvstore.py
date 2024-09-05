@@ -48,25 +48,55 @@ following up:
 import time
 import collections, bisect
 from datetime import datetime, timezone
+import threading
+from readerwriterlock import rwlock
+
 class TimeMap:
 
     def __init__(self):
         self.data = collections.defaultdict(list)
+        # self.lock = collections.defaultdict(threading.Lock)
+        self.lock = collections.defaultdict(rwlock.RWLockFairD)
+        
+
+    def _set(self, key: str, value: str, timestamp: int = None) -> None:
+        # with self.lock[key]:
+        timestamp = timestamp if timestamp != None else int(datetime.now(timezone.utc).timestamp()*1000000)
+        with self.lock[key].gen_wlock():
+            # self.data[key].append((time.time_ns(), value))
+            self.data[key].append((timestamp, value))
+
 
     def set(self, key: str, value: str) -> None:
-
-        # self.data[key].append((time.time_ns(), value))
-        self.data[key].append((int(datetime.now(timezone.utc).timestamp()*1000000), value))
-
+        # with self.lock[key]:
+        with self.lock[key].gen_wlock():
+            # self.data[key].append((time.time_ns(), value))
+            self.data[key].append((int(datetime.now(timezone.utc).timestamp()*1000000), value))
 
     def get(self, key: str, timestamp: int) -> str:
-        if key not in self.data:
-            return ''
-        
-        idx = bisect.bisect_left(self.data[key], (timestamp + 1, ''))
-        
-        if idx == 0:
-            return ''
-        
-        return self.data[key][idx - 1][1]
+        # with self.lock[key]:
+        with self.lock[key].gen_rlock():
+            if key not in self.data:
+                return ''
+            
+            idx = bisect.bisect_left(self.data[key], (timestamp + 1, ''))
+            
+            if idx == 0:
+                return ''
+            
+            return self.data[key][idx - 1][1]
     
+
+# if data are large, need to load most frequent data in memory, push large data to file
+# key, most recent key, 
+# time down sampling, 
+
+# multiple machine -> sharding, 
+
+
+# future time, return latest, wait??
+# index ??
+
+# 1. how to handle concurent issue,   ANS:read+write lock. 
+2. server bottle neck , if server resources limited, the data uploaded in Memery, but the dataset is too big.  ANS: keep most recently hitted data section in Memory, and preload most fr‍‍‌‍‍‌‍‌‌‍‍‍‌‌‍‍‌‌‍equent datasets in Memory.
+3. future time.
