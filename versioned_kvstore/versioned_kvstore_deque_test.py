@@ -2,7 +2,7 @@ import pytest
 import time
 import concurrent.futures
 
-from versioned_kvstore.versioned_kvstore import TimeMap
+# from versioned_kvstore.versioned_kvstore import TimeMap
 from datetime import datetime, timezone
 
 
@@ -16,7 +16,7 @@ from versioned_kvstore.versioned_kvstore_deque import TimeMapQ
 
 
 def test_no_such_key():
-    timeMap = TimeMap()
+    timeMap = TimeMapQ()
     timeMap.set('k1', 'v1')
     timeMap.set('k2', 'v2')
     time_stamp = int(datetime.now(timezone.utc).timestamp()*1000000)
@@ -25,7 +25,7 @@ def test_no_such_key():
 
 
 def test_too_small_timestamp():
-    timeMap = TimeMap()
+    timeMap = TimeMapQ()
     timeMap.set('k1', 'v1')
     timeMap.set('k2', 'v2')
     time_stamp = 100
@@ -33,7 +33,7 @@ def test_too_small_timestamp():
     assert value == ''
 
 def test_large_timestamp():
-    timeMap = TimeMap()
+    timeMap = TimeMapQ()
     timeMap.set('k1', 'v1')
     timeMap.set('k2', 'v2')
     time_stamp = int(datetime.now(timezone.utc).timestamp()*1000000+1000000000000)
@@ -42,7 +42,7 @@ def test_large_timestamp():
 
 
 def test_concurrent_write():
-    timeMap = TimeMap()
+    timeMap = TimeMapQ()
 
 
     def set(key, value):
@@ -70,11 +70,11 @@ def test_concurrent_write():
 
 
 def test_concurrent_time():
-    timeMap = TimeMap()
+    timeMap = TimeMapQ()
 
 
     def set(key, value, time):
-        timeMap._set(key, value, time)
+        timeMap.set_internal(key, value, time)
     def get(key, timeStamp):
         return timeMap.get(key, timeStamp)
 

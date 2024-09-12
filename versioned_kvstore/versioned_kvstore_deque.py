@@ -38,8 +38,8 @@ following up:
 其实这题还有一问呢。要建 index, 我只有时间口述了下inverted index。
 
 
-1. concurrent read /write
-2. out of memeory
+1. concurrent read /write: deque, server
+2. out of memeory: file
 3. future version
 4. index
 
@@ -51,40 +51,44 @@ from datetime import datetime, timezone
 import threading
 from readerwriterlock import rwlock
 
-class TimeMap:
+class TimeMapQ:
 
     def __init__(self):
-        self.data = collections.defaultdict(list)
-        # self.lock = collections.defaultdict(threading.Lock)
-        self.lock = collections.defaultdict(rwlock.RWLockFairD)
+        self.data = collections.defaultdict(collections.deque)
+        
         
 
-    def _set(self, key: str, value: str, timestamp: int = None) -> None:
-        # with self.lock[key]:
+    def set_internal(self, key: str, value: str, timestamp: int = None) -> None:
         timestamp = timestamp if timestamp != None else int(datetime.now(timezone.utc).timestamp()*1000000)
-        with self.lock[key].gen_wlock():
-            # self.data[key].append((time.time_ns(), value))
-            self.data[key].append((timestamp, value))
+        self.data[key].append((timestamp, value))
+
+
+
+    # def _update(self) -> None:
+    #     while self.update:
+    #         try:
+    #             k,v,t = self.update.pop()
+    #         except:
+    #             print('empty deque')
+    #             break
+    #         self.data[k].append((t, v))
 
 
     def set(self, key: str, value: str) -> None:
-        # with self.lock[key]:
-        with self.lock[key].gen_wlock():
-            # self.data[key].append((time.time_ns(), value))
-            self.data[key].append((int(datetime.now(timezone.utc).timestamp()*1000000), value))
+        timestamp = int(datetime.now(timezone.utc).timestamp()*1000000)
+        self.set_internal(key, value, timestamp)
 
     def get(self, key: str, timestamp: int) -> str:
-        # with self.lock[key]:
-        with self.lock[key].gen_rlock():
-            if key not in self.data:
-                return ''
-            
-            idx = bisect.bisect_left(self.data[key], (timestamp + 1, ''))
-            
-            if idx == 0:
-                return ''
-            
-            return self.data[key][idx - 1][1]
+        
+        if key not in self.data:
+            return ''
+        
+        idx = bisect.bisect_left(list(self.data[key]), (timestamp + 1, ''))
+        
+        if idx == 0:
+            return ''
+        
+        return self.data[key][idx - 1][1]
     
 
 # if data are large, need to load most frequent data in memory, push large data to file
