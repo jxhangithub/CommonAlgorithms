@@ -58,14 +58,14 @@ class MemTable:
 
     def __init__(self, start_time: int = 0, data = None):
         self.data = collections.defaultdict(collections.deque) if not data else data
-        self.start_time = self._get_time_utc_ms() if start_time == 0 else start_time
+        self.start_time = self.get_time_utc_ms() if start_time == 0 else start_time
         self.size = 0
         
-    def _get_time_utc_ms(self) -> int:
+    def get_time_utc_ms(self) -> int:
         return int(datetime.now(timezone.utc).timestamp()*1000000)
 
     def put_internal(self, key: str, value: str, timestamp: int = None) -> None:
-        timestamp = timestamp if timestamp != None else self._get_time_utc_ms()
+        timestamp = timestamp if timestamp != None else self.get_time_utc_ms()
         self.data[key].append((timestamp, value))
         self.size += 1
 
@@ -82,7 +82,7 @@ class MemTable:
 
 
     def put(self, key: str, value: str) -> None:
-        self.put_internal(key, value, self._get_time_utc_ms())
+        self.put_internal(key, value, self.get_time_utc_ms())
 
     def get(self, key: str, timestamp: int) -> str:
         
@@ -140,7 +140,7 @@ class TimeMapLSM: # ToDo: add bloom filter
         self.directory = '/'.join([p for p in directory.split('/') if p])
         self.memtable = MemTable()
         self.memtable_capacity = memtable_capacity
-        self.sstables = self._get_sstables()
+        self.sstables = self._get_sstables()  # ToDo: file table class
         self.lru = collections.OrderedDict()
         self.lru_capacity = lru_capacity
 
@@ -173,10 +173,7 @@ class TimeMapLSM: # ToDo: add bloom filter
             self.flush_memtable()
 
     def put(self, key, value):
-        self.memtable.put(key, value)
-
-        if self.memtable.size >= self.memtable_capacity:
-            self.flush_memtable()
+        self.put_internal(key, value, self.memtable.get_time_utc_ms())
 
     def flush_memtable(self):
         self.memtable.flush(self._get_filename(self.memtable.start_time))
