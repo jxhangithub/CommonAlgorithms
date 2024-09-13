@@ -8,6 +8,12 @@ from datetime import datetime, timezone
 
 
 from versioned_kvstore.versioned_kvstore_lsm import TimeMapLSM
+
+
+# pip install -U pytest
+# from lsm.lsm import TimeMapLSM
+
+
 # def test_should_pass():
 #     a = 1
 #     b = 1

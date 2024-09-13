@@ -54,6 +54,11 @@ import os
 import pickle
 import glob
 
+
+# pip install readerwriterlock
+
+
+
 class MemTable:
 
     def __init__(self, start_time: int = 0, data = None):
