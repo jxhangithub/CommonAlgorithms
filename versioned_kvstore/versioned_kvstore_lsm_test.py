@@ -18,11 +18,21 @@ def _get_utc_ms():
     return int(datetime.now(timezone.utc).timestamp()*1000000)
 
 def _clean_data_files():
-    for f in glob.glob(os.path.join('./versioned_kvstore/data/', 'sstable_*.pkl')):
+    for f in glob.glob(os.path.join(_get_directory(), 'sstable_*.pkl')):
         os.remove(f)
 
+def _get_directory():
+    return './versioned_kvstore/data-test2/'
+
+def _clean_directory():
+    os.rmdir(_get_directory())
+
+def _create_directory(directory):
+    os.makedirs(_get_directory() if not directory else directory, exist_ok=True)
+
+
 def test_no_such_key():
-    timeMap = TimeMapLSM()
+    timeMap = TimeMapLSM(directory=_get_directory(), memtable_capacity = 2, lru_capacity = 2)
     timeMap.put('k1', 'v1')
     timeMap.put('k2', 'v2')
     time_stamp = _get_utc_ms()
@@ -31,7 +41,7 @@ def test_no_such_key():
 
 
 def test_too_small_timestamp():
-    timeMap = TimeMapLSM()
+    timeMap = TimeMapLSM(directory=_get_directory(), memtable_capacity = 2, lru_capacity = 2)
     timeMap.put('k1', 'v1')
     timeMap.put('k2', 'v2')
     time_stamp = 100
@@ -39,7 +49,7 @@ def test_too_small_timestamp():
     assert value == ''
 
 def test_large_timestamp():
-    timeMap = TimeMapLSM()
+    timeMap = TimeMapLSM(directory=_get_directory(), memtable_capacity = 2, lru_capacity = 2)
     timeMap.put('k1', 'v1')
     timeMap.put('k2', 'v2')
     time_stamp = _get_utc_ms()+1000000000000
@@ -48,7 +58,7 @@ def test_large_timestamp():
 
 
 def test_concurrent_write():
-    timeMap = TimeMapLSM()
+    timeMap = TimeMapLSM(directory=_get_directory(), memtable_capacity = 2, lru_capacity = 2)
 
 
     def put(key, value):
@@ -76,7 +86,8 @@ def test_concurrent_write():
 
 
 def test_concurrent_time():
-    timeMap = TimeMapLSM()
+    _clean_data_files()
+    timeMap = TimeMapLSM(directory=_get_directory(), memtable_capacity = 2, lru_capacity = 2)
 
 
     def put(key, value, time):
@@ -92,6 +103,9 @@ def test_concurrent_time():
         futures.append(executor.submit(get, 'k1', timestamp))
         futures.append(executor.submit(put, 'k1', 'v2', timestamp))
         futures.append(executor.submit(put, 'k1', 'v3', timestamp))
+        futures.append(executor.submit(put, 'k2', 'v4', timestamp))
+        futures.append(executor.submit(put, 'k2', 'v5', timestamp))
+        futures.append(executor.submit(put, 'k2', 'v6', timestamp))
         res = [f.result() for f in futures]
 
     assert res[1] == 'v1'

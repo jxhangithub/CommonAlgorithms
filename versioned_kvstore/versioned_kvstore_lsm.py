@@ -49,7 +49,7 @@ following up:
 import collections, bisect
 from datetime import datetime, timezone
 # import threading
-# from readerwriterlock import rwlock
+from readerwriterlock import rwlock
 import os
 import pickle
 import glob
@@ -70,107 +70,93 @@ class MemTable:
         self.size += 1
 
 
-
-    # def _update(self) -> None:
-    #     while self.update:
-    #         try:
-    #             k,v,t = self.update.pop()
-    #         except:
-    #             print('empty deque')
-    #             break
-    #         self.data[k].append((t, v))
-
-
     def put(self, key: str, value: str) -> None:
         self.put_internal(key, value, self.get_time_utc_ms())
 
-    def get(self, key: str, timestamp: int) -> str:
-        
+    def get(self, key: str, timestamp: int) -> str:        
         if key not in self.data:
-            return ''
-        
-        idx = bisect.bisect_left(list(self.data[key]), (timestamp + 1, ''))
-        
+            return ''        
+        idx = bisect.bisect_left(list(self.data[key]), (timestamp + 1, ''))        
         if idx == 0:
-            return ''
-        
+            return ''        
         return self.data[key][idx - 1][1]
     
     def flush(self, filename):
         with open(filename, 'wb') as f:
-            pickle.dump(self.data, f)
+            data2 = {key: list(self.data[key]) for key in self.data}
+            pickle.dump(data2, f)
     
 
-# if data are large, need to load most frequent data in memory, push large data to file
-# key, most recent key, 
-# time down sampling, 
+class SSTable:
 
-# multiple machine -> sharding, 
+    def __init__(self, start_time: int = 0, data = None):
+        self.data = collections.defaultdict(list) if not data else data
+        self.start_time = start_time
 
-
-# future time, return latest, wait??
-# index ??
-
-# 1. how to handle concurent issue,   ANS:read+write lock. 
-# 2. server bottle neck , if server resources limited, the data uploaded in Memery, but the dataset is too big.  ANS: keep most recently hitted data section in Memory, and preload most fr‍‍‌‍‍‌‍‌‌‍‍‍‌‌‍‍‌‌‍equent datasets in Memory.
-# 3. future time.
-
-
+    def get(self, key: str, timestamp: int) -> str:        
+        if key not in self.data:
+            return ''        
+        idx = bisect.bisect_left(self.data[key], (timestamp + 1, ''))
+        if idx == 0:
+            return ''        
+        return self.data[key][idx - 1][1]
 
 
-# import os
-# import pickle
-
-# class MemTable:
-#     def __init__(self):
-#         self.data = {}
-
-#     def get(self, key):
-#         return self.data.get(key)
-
-#     def put(self, key, value):
-#         self.data[key] = value
-
-#     def flush(self, filename):
-#         with open(filename, 'wb') as f:
-#             pickle.dump(self.data, f)
 
 class TimeMapLSM: # ToDo: add bloom filter
-    def __init__(self, directory='./versioned_kvstore/data/', memtable_capacity = 3, lru_capacity = 3):
+    def __init__(self, directory='./', memtable_capacity = 2, lru_capacity = 2):
         self.directory = '/'.join([p for p in directory.split('/') if p])
+        os.makedirs(self.directory, exist_ok=True)
+
         self.memtable = MemTable()
         self.memtable_capacity = memtable_capacity
-        self.sstables = self._get_sstables()  # ToDo: file table class
+        self.sstables = self._get_sstables()  
         self.lru = collections.OrderedDict()
         self.lru_capacity = lru_capacity
+        self.lock = rwlock.RWLockFairD()
 
     def _get_sstables(self):
         return [int(f.replace(self.directory + '/sstable_', '').replace('.pkl', '')) \
                 for f in glob.glob(os.path.join(self.directory, 'sstable_*.pkl'))]
 
     def get(self, key, timestamp):
-        if timestamp >= self.memtable.start_time and key in self.memtable.data:
-            return self.memtable.get(key, timestamp)
-        
-        idx = bisect.bisect_right(self.sstables, timestamp)
-        if idx == 0:
-            return ''
-        if self.sstables[idx-1] in self.lru:
-            self.lru.move_to_end(self.sstables[idx-1])
-        else:
-            with open(self._get_filename(self.sstables[idx-1]), 'rb') as f:
-                data = pickle.load(f)
-                self.lru[self.sstables[idx-1]] = MemTable(self.sstables[idx-1], data)
-                if len(self.lru) == self.lru_capacity:
-                    self.lru.popitem(last=False)
-        
-        return self.lru[self.sstables[idx-1]].get(key, timestamp)
+        with self.lock.gen_rlock():
+            if key in self.memtable.data:
+                return self.memtable.get(key, timestamp)
+            
+            idx = bisect.bisect_right(self.sstables, timestamp)
+            res1 = ''
+            res2 = ''
+            if idx != 0:
+                if self.sstables[idx-1] in self.lru:
+                    self.lru.move_to_end(self.sstables[idx-1])
+                else:
+                    with open(self._get_filename(self.sstables[idx-1]), 'rb') as f:
+                        data = pickle.load(f)
+                        self.lru[self.sstables[idx-1]] = SSTable(self.sstables[idx-1], data)
+                        if len(self.lru) == self.lru_capacity:
+                            self.lru.popitem(last=False)
+                res1 = self.lru[self.sstables[idx-1]].get(key, timestamp)
+            if idx != len(self.sstables):
+                if self.sstables[idx] in self.lru:
+                    self.lru.move_to_end(self.sstables[idx])
+                else:
+                    with open(self._get_filename(self.sstables[idx]), 'rb') as f:
+                        data = pickle.load(f)
+                        self.lru[self.sstables[idx]] = SSTable(self.sstables[idx], data)
+                        if len(self.lru) == self.lru_capacity:
+                            self.lru.popitem(last=False)
+                res2 = self.lru[self.sstables[idx]].get(key, timestamp)
+            return res2 if res2 else res1
+            
 
     def put_internal(self, key, value, timestamp):
-        self.memtable.put_internal(key, value, timestamp)
+        with self.lock.gen_rlock():
+            self.memtable.put_internal(key, value, timestamp)
 
         if self.memtable.size >= self.memtable_capacity:
-            self.flush_memtable()
+            with self.lock.gen_wlock():
+                self.flush_memtable()
 
     def put(self, key, value):
         self.put_internal(key, value, self.memtable.get_time_utc_ms())
