@@ -52,17 +52,22 @@ from datetime import datetime, timezone
 # from readerwriterlock import rwlock
 import os
 import pickle
+import glob
 
 class MemTable:
 
     def __init__(self, start_time: int = 0, data = None):
         self.data = collections.defaultdict(collections.deque) if not data else data
-        self.start_time = int(datetime.now(timezone.utc).timestamp()*1000000) if start_time == 0 else start_time
+        self.start_time = self._get_time_utc_ms() if start_time == 0 else start_time
+        self.size = 0
         
+    def _get_time_utc_ms(self) -> int:
+        return int(datetime.now(timezone.utc).timestamp()*1000000)
 
-    def set_internal(self, key: str, value: str, timestamp: int = None) -> None:
-        timestamp = timestamp if timestamp != None else int(datetime.now(timezone.utc).timestamp()*1000000)
+    def put_internal(self, key: str, value: str, timestamp: int = None) -> None:
+        timestamp = timestamp if timestamp != None else self._get_time_utc_ms()
         self.data[key].append((timestamp, value))
+        self.size += 1
 
 
 
@@ -76,9 +81,8 @@ class MemTable:
     #         self.data[k].append((t, v))
 
 
-    def set(self, key: str, value: str) -> None:
-        timestamp = int(datetime.now(timezone.utc).timestamp()*1000000)
-        self.set_internal(key, value, timestamp)
+    def put(self, key: str, value: str) -> None:
+        self.put_internal(key, value, self._get_time_utc_ms())
 
     def get(self, key: str, timestamp: int) -> str:
         
@@ -132,35 +136,50 @@ class MemTable:
 #             pickle.dump(self.data, f)
 
 class TimeMapLSM: # ToDo: add bloom filter
-    def __init__(self, directory):
-        self.directory = directory
-        self.memtable = MemTable()
-        self.sstables = dict()
+    def __init__(self, directory='./', memtable_capacity = 10, lru_capacity = 3):
+        self.directory = '/'.join([p for p in directory.split('/') if p])
+        self.memtable = MemTable(memtable_capacity)
+        self.memtable_capacity = memtable_capacity
+        self.sstables = self._get_sstables()
+        self.lru = collections.OrderedDict()
+        self.lru_capacity = lru_capacity
+
+    def _get_sstables(self):
+        return [f.replace(self.directory + '/sstable_', '').replace('.pkl', '') \
+                for f in glob.glob(os.path.join(self.directory, 'sstable_*.pkl'))]
 
     def get(self, key, timestamp):
         if timestamp >= self.memtable.start_time and key in self.memtable.data:
             return self.memtable.get(key, timestamp)
-
-        for sstable_file in self.sstables:
-            with open(sstable_file, 'rb') as f:
+        
+        idx = bisect.bisect_right(self.sstables, timestamp)
+        if idx == 0:
+            return ''
+        if self.sstables[idx-1] in self.lru:
+            self.lru.move_to_end(self.sstables[idx-1])
+        else:
+            with open(self._get_filename(self.sstables[idx-1]), 'rb') as f:
                 data = pickle.load(f)
-                file_table = MemTable(time, data)
-                if key in data:
-                    return file_table.get(key, timestamp)
+                self.lru[self.sstables[idx-1]] = MemTable(self.sstables[idx-1], data)
+                if len(self.lru) == self.lru_capacity:
+                    self.lru.popitem(last=False)
+        
+        return self.lru[self.sstables[idx-1]].get(key, timestamp)
 
-        return None
 
     def put(self, key, value):
         self.memtable.put(key, value)
 
-        if len(self.memtable.data) > 10:
+        if self.memtable.size >= self.memtable_capacity:
             self.flush_memtable()
 
     def flush_memtable(self):
-        filename = os.path.join(self.directory, f'sstable_{len(self.sstables)}.pkl')
-        self.memtable.flush(filename)
-        self.sstables[self.memtable.start_time] = filename
+        self.memtable.flush(self._get_filename(self.memtable.start_time))
+        self.sstables.append(self.memtable.start_time)
         self.memtable = MemTable()
+
+    def _get_filename(self, start_time:int) -> str:
+        return os.path.join(self.directory, f'sstable_{start_time}.pkl')
 
 # Usage
 # tree = LSMTree('data')
