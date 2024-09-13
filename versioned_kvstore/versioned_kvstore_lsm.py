@@ -136,16 +136,16 @@ class MemTable:
 #             pickle.dump(self.data, f)
 
 class TimeMapLSM: # ToDo: add bloom filter
-    def __init__(self, directory='./', memtable_capacity = 10, lru_capacity = 3):
+    def __init__(self, directory='./versioned_kvstore/data/', memtable_capacity = 3, lru_capacity = 3):
         self.directory = '/'.join([p for p in directory.split('/') if p])
-        self.memtable = MemTable(memtable_capacity)
+        self.memtable = MemTable()
         self.memtable_capacity = memtable_capacity
         self.sstables = self._get_sstables()
         self.lru = collections.OrderedDict()
         self.lru_capacity = lru_capacity
 
     def _get_sstables(self):
-        return [f.replace(self.directory + '/sstable_', '').replace('.pkl', '') \
+        return [int(f.replace(self.directory + '/sstable_', '').replace('.pkl', '')) \
                 for f in glob.glob(os.path.join(self.directory, 'sstable_*.pkl'))]
 
     def get(self, key, timestamp):
@@ -166,6 +166,11 @@ class TimeMapLSM: # ToDo: add bloom filter
         
         return self.lru[self.sstables[idx-1]].get(key, timestamp)
 
+    def put_internal(self, key, value, timestamp):
+        self.memtable.put_internal(key, value, timestamp)
+
+        if self.memtable.size >= self.memtable_capacity:
+            self.flush_memtable()
 
     def put(self, key, value):
         self.memtable.put(key, value)
