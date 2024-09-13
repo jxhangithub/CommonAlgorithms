@@ -1,9 +1,11 @@
-import pytest
 import unittest
 import time
 import concurrent.futures
 import os
 import glob
+import uuid
+import shutil
+
 # from versioned_kvstore.versioned_kvstore import TimeMap
 from datetime import datetime, timezone
 
@@ -12,6 +14,16 @@ from lsm import TimeMapLSM
 
 
 class TestLSM(unittest.TestCase):
+
+
+  def setUp(self):
+    self.timeMap=TimeMapLSM(directory=self._get_directory()+ uuid.uuid4().hex, memtable_capacity = 2, lru_capacity = 2)
+
+  def tearDown(self):
+    shutil.rmtree(self._get_directory())
+    # pass
+
+
   def test_should_pass(self):
       a = 1
       b = 1
@@ -27,6 +39,7 @@ class TestLSM(unittest.TestCase):
       for f in glob.glob(os.path.join(self._get_directory(), 'sstable_*.pkl')):
           os.remove(f)
 
+
   def _clean_directory(self):
       os.rmdir(self._get_directory())
 
@@ -36,39 +49,39 @@ class TestLSM(unittest.TestCase):
 
 
   def test_no_such_key(self):
-      timeMap = TimeMapLSM(directory=self._get_directory(), memtable_capacity = 2, lru_capacity = 2)
-      timeMap.put('k1', 'v1')
-      timeMap.put('k2', 'v2')
+      
+      self.timeMap.put('k1', 'v1')
+      self.timeMap.put('k2', 'v2')
       time_stamp = self._get_utc_ms()
-      value = timeMap.get('k3', time_stamp)
+      value = self.timeMap.get('k3', time_stamp)
       assert value == ''
 
 
   def test_too_small_timestamp(self):
-      timeMap = TimeMapLSM(directory=self._get_directory(), memtable_capacity = 2, lru_capacity = 2)
-      timeMap.put('k1', 'v1')
-      timeMap.put('k2', 'v2')
+      
+      self.timeMap.put('k1', 'v1')
+      self.timeMap.put('k2', 'v2')
       time_stamp = 100
-      value = timeMap.get('k1', time_stamp)
+      value = self.timeMap.get('k1', time_stamp)
       assert value == ''
 
   def test_large_timestamp(self):
-      timeMap = TimeMapLSM(directory=self._get_directory(), memtable_capacity = 2, lru_capacity = 2)
-      timeMap.put('k1', 'v1')
-      timeMap.put('k2', 'v2')
+      
+      self.timeMap.put('k1', 'v1')
+      self.timeMap.put('k2', 'v2')
       time_stamp = self._get_utc_ms()+1000000000000
-      value = timeMap.get('k1', time_stamp)
+      value = self.timeMap.get('k1', time_stamp)
       assert value == 'v1'
 
 
   def test_concurrent_write(self):
-      timeMap = TimeMapLSM(directory=self._get_directory(), memtable_capacity = 2, lru_capacity = 2)
+      
 
 
       def put(key, value):
-          timeMap.put(key, value)
+          self.timeMap.put(key, value)
       def get(key, timeStamp):
-          return timeMap.get(key, timeStamp)
+          return self.timeMap.get(key, timeStamp)
 
       with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
           # executor.map(thread_function, range(3))
@@ -83,21 +96,21 @@ class TestLSM(unittest.TestCase):
 
       time_stamp = self._get_utc_ms()+1000000000000
 
-      value = timeMap.get('k1', time_stamp)
+      value = self.timeMap.get('k1', time_stamp)
       
       assert value == 'v3'
 
 
 
   def test_concurrent_time(self):
-      self._clean_data_files()
-      timeMap = TimeMapLSM(directory=self._get_directory(), memtable_capacity = 2, lru_capacity = 2)
+      # self._clean_data_files()
+      
 
 
       def put(key, value, time):
-          timeMap.put_internal(key, value, time)
+          self.timeMap.put_internal(key, value, time)
       def get(key, timeStamp):
-          return timeMap.get(key, timeStamp)
+          return self.timeMap.get(key, timeStamp)
 
       with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
           # executor.map(thread_function, range(3))
@@ -116,7 +129,7 @@ class TestLSM(unittest.TestCase):
 
       time_stamp = timestamp
 
-      value = timeMap.get('k1', time_stamp)
+      value = self.timeMap.get('k1', time_stamp)
       
       assert value == 'v3'
       # self._clean_data_files()
